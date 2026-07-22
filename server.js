@@ -12,6 +12,28 @@ const MAGNITUD_MINIMA = 3.5;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+const ZONAS = {
+  norte: ["arica", "parinacota", "iquique", "tarapaca", "antofagasta", "calama", "tocopilla", "mejillones", "ollague", "taltal", "chuquicamata", "pozo almonte"],
+  norte_chico: ["copiapo", "atacama", "vallenar", "coquimbo", "la serena", "ovalle", "illapel", "combarbala", "chanaral", "diego de almagro"],
+  centro: ["valparaiso", "vina del mar", "san antonio", "santiago", "metropolitana", "rancagua", "o'higgins", "ohiggins", "talca", "maule", "curico", "linares", "san felipe", "los andes", "melipilla"],
+  sur: ["chillan", "biobio", "bio bio", "concepcion", "los angeles", "temuco", "araucania", "valdivia", "los rios", "osorno", "los lagos", "puerto montt", "angol", "victoria"],
+  austral: ["coyhaique", "aysen", "punta arenas", "magallanes", "chiloe", "puerto williams", "cochrane", "puerto natales"],
+};
+
+function quitarTildes(str) {
+  return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function detectarZona(referencia) {
+  const texto = quitarTildes(referencia || "");
+  for (const [zona, palabras] of Object.entries(ZONAS)) {
+    if (palabras.some((p) => texto.includes(quitarTildes(p)))) {
+      return zona;
+    }
+  }
+  return null;
+}
+
 function idSismo(sismo) {
   return `${sismo.Fecha}_${sismo.RefGeografica}`.replace(/\s+/g, "_");
 }
@@ -76,16 +98,24 @@ async function revisarSismos() {
 
       if (existente) continue;
 
+      const zonaSismo = detectarZona(sismo.RefGeografica);
+
       const { data: tokensRows, error: errTokens } = await supabase
         .from("push_tokens")
-        .select("token");
+        .select("token, zona");
 
       if (errTokens) {
         console.error("Error leyendo tokens:", errTokens.message);
         continue;
       }
 
-      const tokens = (tokensRows || []).map((r) => r.token);
+      const tokensFiltrados = (tokensRows || []).filter((r) => {
+        if (!r.zona || r.zona === "todo") return true;
+        if (!zonaSismo) return true;
+        return r.zona === zonaSismo;
+      });
+
+      const tokens = tokensFiltrados.map((r) => r.token);
 
       await enviarPush(tokens, sismo);
 
@@ -99,7 +129,7 @@ async function revisarSismos() {
       });
 
       console.log(
-        `Sismo nuevo notificado: M${magnitud} ${sismo.RefGeografica} -> ${tokens.length} celulares`
+        `Sismo nuevo notificado: M${magnitud} ${sismo.RefGeografica} (zona: ${zonaSismo || "desconocida"}) -> ${tokens.length} celulares`
       );
     }
   } catch (err) {
@@ -108,12 +138,12 @@ async function revisarSismos() {
 }
 
 app.post("/register-token", async (req, res) => {
-  const { token } = req.body;
+  const { token, zona } = req.body;
   if (!token) return res.status(400).json({ error: "Falta token" });
 
   const { error } = await supabase
     .from("push_tokens")
-    .upsert({ token }, { onConflict: "token" });
+    .upsert({ token, zona: zona || "todo" }, { onConflict: "token" });
 
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
