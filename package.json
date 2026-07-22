@@ -1,0 +1,14 @@
+{
+  "name": "sismo-alertas-backend",
+  "version": "1.0.0",
+  "description": "Backend que detecta sismos nuevos del CSN y manda push notifications",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "axios": "^1.7.2",
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}
